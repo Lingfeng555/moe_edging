@@ -242,7 +242,8 @@ class Evaluator:
         y_true: np.array, 
         binary_classification: bool, 
         average: str = 'weighted', 
-        classifier_name: str = None
+        classifier_name: str = None,
+        verbose = False
     ):
         """
         Evaluates classification model performance with key metrics.
@@ -267,16 +268,30 @@ class Evaluator:
         f1 = f1_score(y_true, y_pred, average=average)
         conf_matrix = confusion_matrix(y_true, y_pred)
     
-        print("Accuracy:", accuracy, "\n", "Precision:", precision, "\n", "Recall:", recall, "\n", "F1 Score:", f1)
-        print("Confusion Matrix:\n", conf_matrix)
+        if verbose: print("Accuracy:", accuracy, "\n", "Precision:", precision, "\n", "Recall:", recall, "\n", "F1 Score:", f1)
+        if verbose: print("Confusion Matrix:\n", conf_matrix)
 
         roc_auc = None
         if binary_classification : 
-            roc_auc = roc_auc_score(y_true, y_pred)
-            print("ROC AUC:", roc_auc)
+            if len(np.unique(y_true)) == 1:
+                roc_auc = 0
+            else:
+                roc_auc = roc_auc_score(y_true, y_pred)
+            if verbose:
+                print("ROC AUC:", roc_auc)
 
         if classifier_name != None:
             Evaluator.register_classification(classifier_name, accuracy, precision, recall, f1, roc_auc)
+
+        return {
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1,
+        'confusion_matrix': conf_matrix,
+        'roc_auc': roc_auc
+        }
+
 
     @staticmethod
     def register_classification(classifier_name, accuracy, precision, recall, f1, roc_auc):
