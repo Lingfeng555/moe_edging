@@ -45,4 +45,6 @@ class CXR8Dataset(Dataset):
         label = torch.tensor(label, dtype=torch.float32)  # Convert labels to tensor
         
         return image, label
-    
+
+class MSDDataset(Dataset):
+    pass
