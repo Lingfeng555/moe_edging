@@ -49,27 +49,27 @@ class CXR8Dataset(Dataset):
 class NEUDataset(Dataset):
     base_path = "metal_dataset/"
 
-    def __init__(self, set:str, transform=None, seed:int = None):
+    def __init__(self, set:str, transform=None, seed:int = None, scale: float = 1 ):
         '''set can be train, test, or valid'''
         super().__init__()
         self.base_path = self.base_path+set+'/'
         self.categories = os.listdir(self.base_path)
-        self.transform = transform
-        paths = self._get_labels()
+        self.transform = transforms.Compose([
+            transforms.ToTensor()
+        ])
+        self.scale = scale
         self.data = {
-            "Path": paths
+            "Path": self._get_labels()
         }
 
-        for categ in self.categories: self.data[categ] = [0 for i in range(len(paths))]
+        for categ in self.categories: self.data[categ] = [0 for i in range(len(self.data["Path"]))]
 
-        for i in range(len(paths)): self.data[paths[i].split("/")[2]][i] = 1
+        for i in range(len(self.data["Path"])): self.data[self.data["Path"][i].split("/")[2]][i] = 1
 
         self.data = pd.DataFrame(self.data)
         
         if seed != None :
             self.data = self.data.sample(frac=1, random_state=seed).reset_index(drop=True)
-
-
 
     def _get_labels(self):
         return [
@@ -86,25 +86,55 @@ class NEUDataset(Dataset):
         img_path = self.data.iloc[index]["Path"]
         image = Image.open(img_path).convert("L")
 
-        # Apply transformations if provided
+        original_width, original_height = image.size
+        image = image.resize((max(1, int(original_width * self.scale)), max(1, int(original_height * self.scale))))
+
         if self.transform:
             image = self.transform(image)
 
-        label = dataset.data.drop(columns="Path").iloc[index].values.astype(int)
+        label = self.data.drop(columns="Path").iloc[index].values.astype(int)
         label = torch.tensor(label, dtype=torch.int8)
 
         return image, label
-        
-        
+    
+    def check_image_sizes(self):
+        sizes = set()
+        for path in self.data["Path"]:
+            with Image.open(path) as img:
+                sizes.add(img.size)
+                if len(sizes) > 1:
+                    print(f"Diferentes tamaños encontrados: {sizes}")
+                    return False
+        print(f"Todas las imágenes tienen el mismo tamaño: {sizes}")
+    
+    def calculate_batch_size_in_gb(self, batch_size: int):
+        # Obtener el tamaño de una imagen procesada
+        img_path = self.data.iloc[0]["Path"]
+        with Image.open(img_path).convert("L") as img:
+            original_width, original_height = img.size
+            new_width = max(1, int(original_width * self.scale))
+            new_height = max(1, int(original_height * self.scale))
 
+        # Tamaño de imagen: (Canales x Alto x Ancho) * tamaño de cada pixel (float32 = 4 bytes)
+        image_size_bytes = (1 * new_height * new_width) * 4  # Escala de grises, 1 canal, float32
+
+        # Tamaño de la etiqueta: cantidad de categorías * 1 byte (int8)
+        num_labels = len(self.categories)
+        label_size_bytes = num_labels * 1  # int8 = 1 byte por categoría
+
+        # Calcular tamaño total por batch
+        total_bytes_per_batch = (image_size_bytes + label_size_bytes) * batch_size
+
+        # Convertir bytes a gigabytes (1 GB = 1024^3 bytes)
+        total_gb_per_batch = total_bytes_per_batch / (1024 ** 3)
+
+        print(f"Tamaño de cada batch ({batch_size} muestras): {total_gb_per_batch:.6f} GB")
+        return total_gb_per_batch
+    
 if __name__ == '__main__':
-    transform = transforms.Compose([
-        transforms.Resize((128, 128)),
-        transforms.ToTensor()
-    ])
 
     # Crear el dataset
-    dataset = NEUDataset(set="train", transform=transform, seed=1)
+    dataset = NEUDataset(set="train", transform=None, seed=1, scale=0.5)
 
     # Probar con un DataLoader
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
@@ -114,4 +144,4 @@ if __name__ == '__main__':
         print("Iteración exitosa.")
         print("Imagen shape:", images.shape)
         print("Etiqueta shape:", labels.shape)
-        break
+        break 
