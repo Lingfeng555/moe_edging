@@ -46,5 +46,72 @@ class CXR8Dataset(Dataset):
         
         return image, label
 
-class MSDDataset(Dataset):
-    pass
+class NEUDataset(Dataset):
+    base_path = "metal_dataset/"
+
+    def __init__(self, set:str, transform=None, seed:int = None):
+        '''set can be train, test, or valid'''
+        super().__init__()
+        self.base_path = self.base_path+set+'/'
+        self.categories = os.listdir(self.base_path)
+        self.transform = transform
+        paths = self._get_labels()
+        self.data = {
+            "Path": paths
+        }
+
+        for categ in self.categories: self.data[categ] = [0 for i in range(len(paths))]
+
+        for i in range(len(paths)): self.data[paths[i].split("/")[2]][i] = 1
+
+        self.data = pd.DataFrame(self.data)
+        
+        if seed != None :
+            self.data = self.data.sample(frac=1, random_state=seed).reset_index(drop=True)
+
+
+
+    def _get_labels(self):
+        return [
+            os.path.join(self.base_path, categ, image)
+            for categ in self.categories
+            for image in os.listdir(os.path.join(self.base_path, categ))
+        ]
+    
+    def __len__(self):
+        paths = dataset._get_labels()
+        return len(paths)
+    
+    def __getitem__(self, index):
+        img_path = self.data.iloc[index]["Path"]
+        image = Image.open(img_path).convert("L")
+
+        # Apply transformations if provided
+        if self.transform:
+            image = self.transform(image)
+
+        label = dataset.data.drop(columns="Path").iloc[index].values.astype(int)
+        label = torch.tensor(label, dtype=torch.int8)
+
+        return image, label
+        
+        
+
+if __name__ == '__main__':
+    transform = transforms.Compose([
+        transforms.Resize((128, 128)),
+        transforms.ToTensor()
+    ])
+
+    # Crear el dataset
+    dataset = NEUDataset(set="train", transform=transform, seed=1)
+
+    # Probar con un DataLoader
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+
+    # Intentar iterar sobre el dataloader
+    for images, labels in dataloader:
+        print("Iteración exitosa.")
+        print("Imagen shape:", images.shape)
+        print("Etiqueta shape:", labels.shape)
+        break
