@@ -208,7 +208,10 @@ class Perspectiver:
         return {
             'Silhouette Score': silhouette,
             'Davies-Bouldin Index': davies_bouldin,
-            'Calinski-Harabasz Index': calinski_harabasz
+            'Calinski-Harabasz Index': calinski_harabasz,
+            'Silhouette Score/n': silhouette/len(np.unique(clustered_image)),
+            'Davies-Bouldin Index/n': davies_bouldin/len(np.unique(clustered_image)),
+            'Calinski-Harabasz Index/n': calinski_harabasz/len(np.unique(clustered_image))
         }
         
     @staticmethod
