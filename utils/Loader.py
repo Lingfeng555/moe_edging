@@ -79,12 +79,12 @@ class NEUDataset(Dataset):
         ]
     
     def __len__(self):
-        paths = dataset._get_labels()
+        paths = self._get_labels()
         return len(paths)
     
     def __getitem__(self, index):
         img_path = self.data.iloc[index]["Path"]
-        image = Image.open(img_path).convert("L")
+        image = Image.open(img_path)
 
         original_width, original_height = image.size
         image = image.resize((max(1, int(original_width * self.scale)), max(1, int(original_height * self.scale))))
