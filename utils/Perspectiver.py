@@ -7,6 +7,7 @@ from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score, silho
 
 import optuna
 from joblib import Parallel, delayed
+import torch
 class Perspectiver:
 
     @staticmethod
@@ -56,6 +57,62 @@ class Perspectiver:
         filtered_image = cv2.pyrMeanShiftFiltering(image, sp, sr)
         return filtered_image
     
+    @staticmethod
+    def mean_shift_filtering_torch(image: np.ndarray, sp: float, sr: float, max_iter: int = 5):
+        """
+        Mean shift filtering con PyTorch en GPU (implementación naive).
+
+        Args:
+            image (np.ndarray): Imagen de entrada en formato BGR.
+            sp (float): Radio espacial.
+            sr (float): Radio de color.
+            max_iter (int): Iteraciones máximas de actualización.
+
+        Returns:
+            np.ndarray: Imagen filtrada tras aplicar mean shift.
+        """
+        if not isinstance(image, np.ndarray):
+            raise TypeError("La imagen debe ser un arreglo NumPy.")
+        if sp <= 0 or sr <= 0:
+            raise ValueError("Los radios 'sp' y 'sr' deben ser positivos.")
+        
+        # Carga en tensor GPU (float)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        img_t = torch.from_numpy(image).float().to(device)
+        h, w, c = img_t.shape
+        
+        # Coordenadas de cada pixel
+        grid_y, grid_x = torch.meshgrid(torch.arange(h, device=device),
+                                        torch.arange(w, device=device),
+                                        indexing='ij')
+        coords = torch.stack([grid_y, grid_x], dim=-1).float()  # (h, w, 2)
+
+        # Reestructuramos para manejarlo más fácil: (h*w, 3) y (h*w, 2)
+        flat_img = img_t.view(-1, c)
+        flat_coords = coords.view(-1, 2)
+
+        # Proceso iterativo
+        for _ in range(max_iter):
+            # Para cada píxel, calculamos distancias espaciales y de color con todos.
+            # (Implementación naive, muy costosa en memoria/tiempo para imágenes grandes).
+            dist_spatial = (flat_coords.unsqueeze(1) - flat_coords.unsqueeze(0)).norm(dim=-1)
+            dist_color = (flat_img.unsqueeze(1) - flat_img.unsqueeze(0)).norm(dim=-1)
+
+            # Creamos máscara con los píxeles dentro de las esferas espaciales y de color
+            mask = (dist_spatial < sp) & (dist_color < sr)
+
+            # Sumamos y promediamos: (Basta con un softmax manual usando mask para indices)
+            mask_sum = mask.sum(dim=1, keepdim=True).clamp_min(1.0)
+            new_coords = (flat_coords.unsqueeze(1) * mask.unsqueeze(-1)).sum(dim=1) / mask_sum
+            new_colors = (flat_img.unsqueeze(1) * mask.unsqueeze(-1)).sum(dim=1) / mask_sum
+
+            flat_coords = new_coords
+            flat_img = new_colors
+
+        # Reconstruimos la imagen
+        filtered = flat_img.view(h, w, c).detach().cpu().numpy().astype(np.uint8)
+        return filtered
+
     @staticmethod
     def knnFiltering(image: np.array, d: int, sigma_color: float, sigma_space: float) -> np.array:
         """
