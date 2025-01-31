@@ -47,6 +47,7 @@ def get_metrics(y_test, y_pred):
 
 
 def get_metrics_multiclass(y_test, y_pred, class_names, class_names_str):
+    total = 0
     cm = confusion_matrix(y_test, y_pred)
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, average='weighted')
@@ -85,8 +86,11 @@ def get_metrics_multiclass(y_test, y_pred, class_names, class_names_str):
     for i in range(len(class_names)):
         fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_pred_bin[:, i])
         roc_auc[i] = auc(fpr[i], tpr[i])
+        total += roc_auc[i]
         plt.plot(fpr[i], tpr[i], label=f'ROC curve of class {class_names[i]} (AUC = {roc_auc[i]:.2f})')
 
+    media = total / (i+1)
+    print("ROC-AUC medio :", media)
     plt.plot([0, 1], [0, 1], 'k--')
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
