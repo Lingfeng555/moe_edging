@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-from prototype1.CNNBlock import CNNBlock
-from prototype1.AxialAttentionBlock import AttentionBlock
-from prototype1.FCExpert import FCExpert
-from prototype1.FinalBlock import FinalExpert
+from .p1_components.CNNBlock import CNNBlock
+from .p1_components.AxialAttentionBlock import AttentionBlock
+from .p1_components.FCExpert import FCExpert
+from .p1_components.FinalBlock import FinalExpert
 
 class Prototype1 (nn.Module):
 
@@ -20,10 +20,11 @@ class Prototype1 (nn.Module):
         features = self.cnn_block(x)
 
         attention_values = self.attention_block(features)
-        features = features.view(32, 32, -1)
+        #print(features.shape)
+        features = features.view(features.shape[0], 32, -1)
         #print("Features.shape (batch_size, n_features, dataflatten) :",features.shape)
         #print("Features.shape (batch_size, n_features, ,attention value) :", attention_values.shape)
-        x = torch.stack([self.experts[i](features[:, i, :], attention_values[i]) for i in range(self.num_experts)], dim=1)
+        x = torch.stack([self.experts[i](features[:, i, :], attention_values[:, i, :]) for i in range(self.num_experts)], dim=1)
         x = x.flatten(start_dim=1)
         x = self.wighted_sum(x)
         #x = torch.clamp(x, min=1.0)
