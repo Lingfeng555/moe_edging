@@ -79,16 +79,17 @@ class RL_Agent:
         rewards_expanded = rewards.expand(-1, 2)
         #rewards_expanded = rewards.expand_as(next_outputs)
 
-        target_values = (rewards_expanded  + (1 - dones) * self.gamma * next_outputs) 
-        for i in range(len(rewards)):
-            print(f"\tExample {i} -> Current output: {outputs[i]} Reward: {rewards[i]}, Target value: {target_values[i]}")
+        target_values = (rewards_expanded  + ((1 - dones) * self.gamma * next_outputs)) 
+        
         # Compute loss
+        loss = F.mse_loss(outputs[:, 0], target_values[:, 0]) + F.mse_loss(outputs[:, 1], target_values[:, 1])
         #loss = self.loss_fn(outputs, target_values)
 
-        loss = F.mse_loss(outputs[:, 0], target_values[:, 0]) + F.mse_loss(outputs[:, 1], target_values[:, 1])
+        #for i in range(len(rewards)):
+            #print(f"\tExample {i} -> Current output: {outputs[i]} Reward: {rewards[i]}, Target value: {target_values[i]}, dones: {dones[i]}, loss: {loss}")
 
         # 0--------------------------------------------------------------
-        
+
         # Optimize model
         self.optimizer.zero_grad()
         loss.backward()
@@ -96,7 +97,7 @@ class RL_Agent:
 
         # Decay epsilon
         self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
-        #print(f"Agent epsilon:{self.epsilon}")
+        print(f"\tAvg guess: {outputs.mean(dim=0)}, avg=target: {target_values.mean(dim=0)}")
 
 class NEUEnvironment:
     def __init__(self, dataset, batch_size):
@@ -138,7 +139,7 @@ class NEUEnvironment:
         score = davies_bouldin_score(original_gray.reshape(-1, 1), clustered_gray)
 
         # Metric to maximize: Silhouette Score per cluster
-        return (math.log2(score)*n_clusters) - 2000
+        return (math.log2(score)*n_clusters)
 
     def reward_function(self, output, image): 
         """ Reward function based or the distance between the predicted values and correct values """
@@ -153,7 +154,7 @@ class NEUEnvironment:
         penalty_sp += -(50 * sp) if sp >= 100 else 0
         penalty_sr += -(50 * sr) if sr >= 100 else 0
 
-        return self.calculate_reward(image, 1 if sp <= 0 else sp,  1 if sr <= 0 else sr) + penalty_sp + penalty_sr
+        return (self.calculate_reward(image, 1 if sp <= 0 else sp,  1 if sr <= 0 else sr) + penalty_sp + penalty_sr)/100
     
 class Gym:
     def __init__(self, agent, enviroment):
