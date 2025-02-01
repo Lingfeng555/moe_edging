@@ -27,7 +27,7 @@ class Prototype1 (nn.Module):
         x = torch.stack([self.experts[i](features[:, i, :], attention_values[:, i, :]) for i in range(self.num_experts)], dim=1)
         x = x.flatten(start_dim=1)
         x = self.wighted_sum(x)
-        #x = torch.clamp(x, min=1.0)
+        # x = torch.clamp(x, min=1.0,max=100) #activarlp solo para el modelo entrenado
         return x
     
 if __name__ == "__main__":
