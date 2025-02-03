@@ -139,7 +139,7 @@ class NEUEnvironment:
         score = davies_bouldin_score(original_gray.reshape(-1, 1), clustered_gray)
 
         # Metric to maximize: Silhouette Score per cluster
-        return (math.log2(score)*n_clusters)
+        return (math.sqrt(score)+n_clusters)
 
     def reward_function(self, output, image): 
         """ Reward function based or the distance between the predicted values and correct values """
