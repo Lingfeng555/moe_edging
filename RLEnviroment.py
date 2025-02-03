@@ -154,7 +154,7 @@ class NEUEnvironment:
         penalty_sp += -(50 * sp) if sp >= 100 else 0
         penalty_sr += -(50 * sr) if sr >= 100 else 0
 
-        return (self.calculate_reward(image, 1 if sp <= 1 else sp,  1 if sr <= 1 else sr) + penalty_sp + penalty_sr)/100
+        return (self.calculate_reward(image, 1 if sp <= 1 else sp,  1 if sr <= 1 else sr) + penalty_sp + penalty_sr)
     
 class Gym:
     def __init__(self, agent, enviroment):
