@@ -161,7 +161,7 @@ def optimized_get_mean_pit_area(image):
     if len(pits) == 0:
         return 0
     total_area = sum(len(p) for p in pits)
-    return total_area #/ len(pits)
+    return (total_area / len(pits)) if len(pits) >= 1 else -100
 
 def run_single_test(test_id, H, W, intensities):
     # Establece una semilla única para cada test

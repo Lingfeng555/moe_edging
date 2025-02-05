@@ -16,21 +16,15 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from source.Prototype1 import Prototype1
 from utils.Loader import NEUDataset
 from utils.Perspectiver import Perspectiver
+from fosas import optimized_get_mean_pit_area
 
 def calculate_reward(image, sp, sr):
     image = Perspectiver.grayscale_to_rgb(Perspectiver.normalize_to_uint8(image.detach().cpu().numpy()[0][0]))
-    after = Perspectiver.meanShift(image, sp, sr)
-    original_gray = Perspectiver.rgb_to_grayscale(image).flatten()
-    clustered_gray = Perspectiver.rgb_to_grayscale(after).flatten()
-
-    n_clusters = len(np.unique(after))
-    if n_clusters < 20:
-        return -10000/(n_clusters+1)
-        
-    score = davies_bouldin_score(original_gray.reshape(-1, 1), clustered_gray)
-
-    # Metric to maximize: Silhouette Score per cluster
-    return (math.sqrt(score)/2+n_clusters)
+    after = Perspectiver.kmeansClustering(Perspectiver.meanShift(image, sp, sr), k = 5)
+    try:
+        return optimized_get_mean_pit_area(after)
+    except: 
+        return -100
 
 def reward_function(output, image): 
     """ Reward function based or the distance between the predicted values and correct values """
@@ -39,13 +33,16 @@ def reward_function(output, image):
 
     sp = output[0]
     sr = output[1]
-    penalty_sp = (1000 * sp - 100) if sp <= 0 else 0
-    penalty_sr = (1000 * sr - 100) if sr <= 0 else 0
+    
+    if sp <= 0 : return sp * 50 - 5 
+    if sr <= 0 : return sr * 50 - 5
 
-    penalty_sp += -(50 * sp) if sp >= 100 else 0
-    penalty_sr += -(50 * sr) if sr >= 100 else 0
+    if sp >= 100 : return (-50)*(abs(50-sp)) - 5 
+    if sr >= 100 : return (-50)*(abs(50-sr)) - 5
 
-    return (calculate_reward(image, 1 if sp <= 1 else sp,  1 if sr <= 1 else sr) + penalty_sp + penalty_sr)
+    print(f"sp: {sp}, sr: {sr}")
+
+    return calculate_reward(image, 1 if sp <= 1 else sp,  1 if sr <= 1 else sr)
 
 # Entorno personalizado: observa imágenes, acciones continuas [sp, sr]
 class ImageEnv(gym.Env):
@@ -108,11 +105,11 @@ if __name__ == "__main__":
         policy_kwargs=policy_kwargs,
         verbose=1,
         learning_rate=5e-5,
-        batch_size=64,
+        batch_size=512,
         buffer_size=10_000  # reduce para evitar un uso excesivo de RAM
     )
 
-    model.learn(total_timesteps=40000)
+    model.learn(total_timesteps=1000, log_interval=100, progress_bar=True)
 
     model.save(path="SAC_TEST")
 
@@ -135,7 +132,11 @@ if __name__ == "__main__":
     print(trained_model)
 
     # Guardar solo la red neuronal en un archivo .pth
-    torch.save(trained_model.state_dict(), "h1.pth")
+    torch.save({
+    'state_dict': trained_model.state_dict(),
+    'model_class': 'Prototype1',  # You might not need this if it's imported elsewhere
+    'num_attention_heads': 16  # Save architecture parameters
+    }, "h1.pth")
     print("Modelo guardado exitosamente en h1.pth")
 
 
