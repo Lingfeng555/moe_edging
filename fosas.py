@@ -4,6 +4,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from scipy.ndimage import label as ndi_label, binary_dilation
 from utils.Perspectiver import Perspectiver
 import concurrent.futures
+from collections import Counter
+import cv2
+
 def move(initial_pos, direction): return tuple(a + b for a, b in zip(initial_pos, direction))
 
 def _get_area_groups(walker, positions:set, directions, record: set):
@@ -87,48 +90,78 @@ def get_mean_pit_area(image):
 
 def optimized_get_mean_pit_area(image):
     """
-    Calcula el área media de fosas (pits) en la imagen, descartando aquellas que toquen
-    el borde o estén adyacentes a fosas/colinas previas.
+    Procesa de manera determinista los grupos conectados, 
+    ordenándolos de abajo hacia arriba (fila descendente) 
+    y columna ascendente.
     """
-    # Convierte la imagen a numpy y escala a grises uint8
-    pixels = np.uint8(np.round(Perspectiver.rgb_to_grayscale(Perspectiver.normalize_to_uint8(image))))
-    MAXROW, MAXCOL = pixels.shape
+    # Convertimos la imagen a escala de grises normalizada
+    pixels = np.uint8(
+        np.round(
+            Perspectiver.rgb_to_grayscale(
+                Perspectiver.normalize_to_uint8(image)
+            )
+        )
+    )
 
-    pit_mask = np.zeros_like(pixels, dtype=bool)  # Máscara para fosas
-    hill_mask = np.zeros_like(pixels, dtype=bool)  # Máscara para colinas
-    pit_areas = []
+    maxrow, maxcol = pixels.shape
+    clusters = np.sort(np.unique(pixels))
 
-    # Estructura 4-conexa
-    structure = np.array([[0, 1, 0],
-                          [1, 1, 1],
-                          [0, 1, 0]], dtype=bool)
+    pits, hills = [], []
+    pits_union, hills_union = set(), set()
 
-    # Procesa cada intensidad en orden ascendente
-    for intensity in np.sort(np.unique(pixels)):
-        mask = (pixels == intensity)  # Máscara binaria para la intensidad actual
-        # Etiqueta componentes conexas usando ndi_label
-        labeled, num_features = ndi_label(mask, structure=structure)
+    # Direcciones para comprobar contigüidad y adyacencia
+    directions = [(1,0), (-1,0), (0,1), (0,-1)]
 
-        for comp in range(1, num_features + 1):
-            comp_mask = (labeled == comp)
-            coords = np.argwhere(comp_mask)
-            # Si la componente toca el borde, se clasifica como colina
-            if (np.any(coords[:, 0] == 0) or np.any(coords[:, 0] == MAXROW - 1) or
-                np.any(coords[:, 1] == 0) or np.any(coords[:, 1] == MAXCOL - 1)):
-                hill_mask |= comp_mask
-                continue
+    # Recolectamos todos los grupos conectados
+    all_groups = []
+    for cluster in clusters:
+        mask = (pixels == cluster).astype(np.uint8)
+        nlabels, labels = cv2.connectedComponents(mask, connectivity=4)
 
-            # Obtiene vecinos 4-conexos mediante dilatación
-            dilated = binary_dilation(comp_mask, structure=structure)
-            border = dilated & ~comp_mask
-            # Si es adyacente a fosas o colinas previas, clasifica como colina
-            if np.any(pit_mask & border) or np.any(hill_mask & border):
-                hill_mask |= comp_mask
-            else:
-                pit_mask |= comp_mask
-                pit_areas.append(coords.shape[0])
-    
-    return np.mean(pit_areas) if pit_areas else -1
+        for lbl_idx in range(1, nlabels):
+            coords = np.argwhere(labels == lbl_idx)
+            group_set = set(map(tuple, coords))
+            # Coordenada mínima de la región (en filas y columnas)
+            min_coord = coords.min(axis=0)  # (min_row, min_col)
+            
+            # Guardamos (min_coord, set_de_pixeles, cluster) 
+            all_groups.append((tuple(min_coord), group_set, cluster))
+
+    # Ahora ordenamos de ABAJO hacia ARRIBA => 
+    # orden por -min_row. Para columnas, a menudo se deja en ascendente.
+    # Cambiar a -min_col si se desea invertir también la columna.
+    all_groups.sort(key=lambda x: (-x[0][0], x[0][1]))
+
+    # Clasificación determinista de cada grupo (pits o hills)
+    for _, group_set, _ in all_groups:
+        is_valid = True
+        for (gx, gy) in group_set:
+            # Si toca borde, es hill
+            if gx == 0 or gx == (maxrow - 1) or gy == 0 or gy == (maxcol - 1):
+                is_valid = False
+                break
+            # Si está adyacente a grupos ya clasificados
+            for dx, dy in directions:
+                nx, ny = gx + dx, gy + dy
+                if (nx, ny) in pits_union or (nx, ny) in hills_union:
+                    is_valid = False
+                    break
+            if not is_valid:
+                break
+
+        # Asignamos según resultado
+        if is_valid:
+            pits.append(group_set)
+            pits_union.update(group_set)
+        else:
+            hills.append(group_set)
+            hills_union.update(group_set)
+
+    # Área promedio de fosas
+    if len(pits) == 0:
+        return 0
+    total_area = sum(len(p) for p in pits)
+    return total_area #/ len(pits)
 
 def run_single_test(test_id, H, W, intensities):
     # Establece una semilla única para cada test
@@ -167,6 +200,6 @@ def test_functions(num_tests=10):
     print(f"mean_err = {mean_err}")
     print(f"std_err = {std_err}")
     print(f"error mas comun = {most_common_error}")
-    
+
 if __name__ == "__main__":
     test_functions(1000)
