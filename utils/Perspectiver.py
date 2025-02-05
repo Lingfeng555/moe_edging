@@ -318,3 +318,21 @@ class Perspectiver:
         # Scale the image to the range 0-255
         scaled_image = (normalized_image - min_val) / (max_val - min_val) * 255.0
         return scaled_image.astype(np.uint8)
+    
+    @staticmethod
+    def canny_filter(img: np.array, lower: int, upper: int) -> np.array:
+        """
+        Applies the canny filter to an image.
+
+        Args:
+            img (np.array): Input normalized image as a NumPy array.
+            lower (int): lower threshold
+            upper (int): upper threshold
+
+        Returns:
+            np.array: Image with values scaled to the range 0 to 255.
+        """
+        
+        canny_img = cv2.Canny(img, lower, upper) 
+
+        return canny_img
