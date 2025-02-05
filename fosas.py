@@ -1,5 +1,9 @@
 import numpy as np
-
+from scipy.ndimage import maximum_filter, minimum_filter, label, generate_binary_structure
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from scipy.ndimage import label as ndi_label, binary_dilation
+from utils.Perspectiver import Perspectiver
+import concurrent.futures
 def move(initial_pos, direction): return tuple(a + b for a, b in zip(initial_pos, direction))
 
 def _get_area_groups(walker, positions:set, directions, record: set):
@@ -58,9 +62,9 @@ def get_pits (cluster, maxcol: int, maxrow: int, previus_pits, previus_hills):
         #print(pits)
     return pits, hills
             
-def get_pits_fosas(image):
-    #pixels = np.uint8(np.round(Perspectiver.rgb_to_grayscale(Perspectiver.normalize_to_uint8(image))))
-    pixels = image
+def get_mean_pit_area(image):
+    pixels = np.uint8(np.round(Perspectiver.rgb_to_grayscale(Perspectiver.normalize_to_uint8(image))))
+    #pixels = image
     clusters = np.sort(np.unique(pixels))
     #print(f"Formato de la imagen: {image.shape}, clusters : {clusters}")
 
@@ -80,11 +84,89 @@ def get_pits_fosas(image):
 
     area = sum([len(pit) for pit in pits])
     return area/len(pits)
-           
-kmeans_image = np.array((
-    [255, 244, 255, 255, 255],
-    [244, 0  , 0  , 244, 1  ],
-    [222, 0  , 3  , 1  , 3  ],
-    [120, 1  , 9  , 11 , 0  ]
-))
-print(get_pits_fosas(kmeans_image))
+
+def optimized_get_mean_pit_area(image):
+    """
+    Calcula el área media de fosas (pits) en la imagen, descartando aquellas que toquen
+    el borde o estén adyacentes a fosas/colinas previas.
+    """
+    # Convierte la imagen a numpy y escala a grises uint8
+    pixels = np.uint8(np.round(Perspectiver.rgb_to_grayscale(Perspectiver.normalize_to_uint8(image))))
+    MAXROW, MAXCOL = pixels.shape
+
+    pit_mask = np.zeros_like(pixels, dtype=bool)  # Máscara para fosas
+    hill_mask = np.zeros_like(pixels, dtype=bool)  # Máscara para colinas
+    pit_areas = []
+
+    # Estructura 4-conexa
+    structure = np.array([[0, 1, 0],
+                          [1, 1, 1],
+                          [0, 1, 0]], dtype=bool)
+
+    # Procesa cada intensidad en orden ascendente
+    for intensity in np.sort(np.unique(pixels)):
+        mask = (pixels == intensity)  # Máscara binaria para la intensidad actual
+        # Etiqueta componentes conexas usando ndi_label
+        labeled, num_features = ndi_label(mask, structure=structure)
+
+        for comp in range(1, num_features + 1):
+            comp_mask = (labeled == comp)
+            coords = np.argwhere(comp_mask)
+            # Si la componente toca el borde, se clasifica como colina
+            if (np.any(coords[:, 0] == 0) or np.any(coords[:, 0] == MAXROW - 1) or
+                np.any(coords[:, 1] == 0) or np.any(coords[:, 1] == MAXCOL - 1)):
+                hill_mask |= comp_mask
+                continue
+
+            # Obtiene vecinos 4-conexos mediante dilatación
+            dilated = binary_dilation(comp_mask, structure=structure)
+            border = dilated & ~comp_mask
+            # Si es adyacente a fosas o colinas previas, clasifica como colina
+            if np.any(pit_mask & border) or np.any(hill_mask & border):
+                hill_mask |= comp_mask
+            else:
+                pit_mask |= comp_mask
+                pit_areas.append(coords.shape[0])
+    
+    return np.mean(pit_areas) if pit_areas else -1
+
+def run_single_test(test_id, H, W, intensities):
+    # Establece una semilla única para cada test
+    np.random.seed(test_id + 1000)
+    base = np.random.choice(intensities, size=(H, W))
+    # Genera imagen RGB (R=G=B)
+    image = np.stack([base, base, base], axis=-1)
+    orig = get_mean_pit_area(image)
+    opt = optimized_get_mean_pit_area(image)
+    err = np.abs(orig - opt)
+    return test_id, orig, opt, err
+
+# Script de pruebas en paralelo
+def test_functions(num_tests=10):
+    H, W = 100, 100
+    intensities = [0, 85, 170, 255, 42, 64, 123]
+    total_err = 0
+    error_list = []  # Almacena los errores de cada test
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = [executor.submit(run_single_test, i+1, H, W, intensities) for i in range(num_tests)]
+        for future in concurrent.futures.as_completed(futures):
+            test_id, orig, opt, err = future.result()
+            total_err += err
+            error_list.append(err)
+            if np.isclose(orig, opt):
+                print(f"Test {test_id}: OK, resultado = {orig}")
+            else:
+                print(f"Test {test_id}: Mismatch, original = {orig}, optimizado = {opt}")
+    mean_err = total_err / num_tests
+    std_err = np.std(error_list)
+    
+    # Para calcular el error más común, redondeamos a 4 decimales
+    rounded_errors = [round(e, 4) for e in error_list]
+    most_common_error = Counter(rounded_errors).most_common(1)[0][0]
+    
+    print(f"mean_err = {mean_err}")
+    print(f"std_err = {std_err}")
+    print(f"error mas comun = {most_common_error}")
+    
+if __name__ == "__main__":
+    test_functions(1000)
