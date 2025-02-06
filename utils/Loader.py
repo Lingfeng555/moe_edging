@@ -71,6 +71,8 @@ class NEUDataset(Dataset):
         if seed != None :
             self.data = self.data.sample(frac=1, random_state=seed).reset_index(drop=True)
 
+        self.data = pd.merge(self.data, pd.read_csv("output.csv"), on='Path', how='inner')
+
     def _get_labels(self):
         return [
             os.path.join(self.base_path, categ, image)
@@ -79,8 +81,7 @@ class NEUDataset(Dataset):
         ]
     
     def __len__(self):
-        paths = self._get_labels()
-        return len(paths)
+        return len(self.data)
     
     def __getitem__(self, index):
         img_path = self.data.iloc[index]["Path"]
@@ -95,7 +96,12 @@ class NEUDataset(Dataset):
         label = self.data.drop(columns="Path").iloc[index].values.astype(int)
         label = torch.tensor(label, dtype=torch.int8)
 
-        return image, label
+        # Extraer sp y sr como float y convertir a tensor
+        sp = float(self.data.iloc[index]["sp"])
+        sr = float(self.data.iloc[index]["sr"])
+        best_parameters = torch.tensor([sp, sr], dtype=torch.float)
+        
+        return image, label, best_parameters
     
     def check_image_sizes(self):
         sizes = set()
@@ -131,6 +137,9 @@ class NEUDataset(Dataset):
         print(f"Tamaño de cada batch ({batch_size} muestras): {total_gb_per_batch:.6f} GB")
         return total_gb_per_batch
     
+    def get_sp_sr (self, path: str):
+        return dataset.data["sp"][dataset.data["Path"] == path], dataset.data["sr"][dataset.data["Path"] == path]
+    
 if __name__ == '__main__':
 
     # Crear el dataset
@@ -139,9 +148,5 @@ if __name__ == '__main__':
     # Probar con un DataLoader
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
 
-    # Intentar iterar sobre el dataloader
-    for images, labels in dataloader:
-        print("Iteración exitosa.")
-        print("Imagen shape:", images.shape)
-        print("Etiqueta shape:", labels.shape)
-        break 
+    for images, labels, best_parameters in dataloader:
+        print(images.shape, labels.shape, best_parameters)
