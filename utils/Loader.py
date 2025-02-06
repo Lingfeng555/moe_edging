@@ -49,7 +49,7 @@ class CXR8Dataset(Dataset):
 class NEUDataset(Dataset):
     base_path = "metal_dataset/"
 
-    def __init__(self, set:str, transform=None, seed:int = None, scale: float = 1 ):
+    def __init__(self, set:str, transform=None, seed:int = None, scale: float = 1, best_param = False):
         '''set can be train, test, or valid'''
         super().__init__()
         self.base_path = self.base_path+set+'/'
@@ -61,6 +61,7 @@ class NEUDataset(Dataset):
         self.data = {
             "Path": self._get_labels()
         }
+        self.best_param = best_param
 
         for categ in self.categories: self.data[categ] = [0 for i in range(len(self.data["Path"]))]
 
@@ -71,7 +72,9 @@ class NEUDataset(Dataset):
         if seed != None :
             self.data = self.data.sample(frac=1, random_state=seed).reset_index(drop=True)
 
-        self.data = pd.merge(self.data, pd.read_csv("output.csv"), on='Path', how='inner')
+        if self.best_param: self.data = pd.merge(self.data, pd.read_csv("output.csv"), on='Path', how='inner')
+
+        print(f"Dataset: {set} created!")
 
     def _get_labels(self):
         return [
@@ -95,13 +98,9 @@ class NEUDataset(Dataset):
 
         label = self.data.drop(columns="Path").iloc[index].values.astype(int)
         label = torch.tensor(label, dtype=torch.int8)
-
-        # Extraer sp y sr como float y convertir a tensor
-        sp = float(self.data.iloc[index]["sp"])
-        sr = float(self.data.iloc[index]["sr"])
-        best_parameters = torch.tensor([sp, sr], dtype=torch.float)
         
-        return image, label, best_parameters
+        if self.best_param: return image, label, torch.tensor([float(self.data.iloc[index]["sp"]), float(self.data.iloc[index]["sr"])], dtype=torch.float)
+        else: return image, label
     
     def check_image_sizes(self):
         sizes = set()
