@@ -31,10 +31,10 @@ from scipy.ndimage import maximum_filter, minimum_filter, label, generate_binary
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from scipy.ndimage import label as ndi_label, binary_dilation
 
-loaded_model = Prototype1(num_attention_heads=16)
-loaded_model.load_state_dict(torch.load("h1.pth", map_location=torch.device('cpu')))
-loaded_model.to("cuda")
-loaded_model.eval()
+#loaded_model = Prototype1(num_attention_heads=16)
+#loaded_model.load_state_dict(torch.load("h1.pth", map_location=torch.device('cpu')))
+#loaded_model.to("cuda")
+#loaded_model.eval()
 
 def save_image(path, image):
     """
@@ -44,12 +44,15 @@ def save_image(path, image):
         path (str): Ruta completa donde se guardará la imagen.
         image (numpy.ndarray): Imagen a guardar.
     """
-    # Extraer el directorio de la ruta
+    if image.ndim == 3 and image.shape[2] == 3:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Crear carpeta si no existe
     directory = os.path.dirname(path)
     if not os.path.exists(directory):
-        os.makedirs(directory)  # Crear carpeta si no existe
-
-    # Guardar la imagen en la ruta indicada
+        os.makedirs(directory)
+    
+    # Guardar la imagen en escala de grises
     cv2.imwrite(path, image)
 
 dataset = NEUDataset(set="train", seed=555, scale=0.5, best_param=True, output_path="outputs_k10")
@@ -63,7 +66,7 @@ for i in range(len(dataset)):
     sp = dataset.data["sp"][i]
     sr = dataset.data["sr"][i]
     k = dataset.data["k"][i]
-    clustered_image = Perspectiver.kmeansClustering(Perspectiver.meanShift(original_image, sp, sr), k=k)
+    clustered_image = Perspectiver.meanShift(original_image, sp, sr)
 
     save_image(path, clustered_image)
 

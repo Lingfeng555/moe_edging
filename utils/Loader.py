@@ -65,7 +65,7 @@ class NEUDataset(Dataset):
 
         for categ in self.categories: self.data[categ] = [0 for i in range(len(self.data["Path"]))]
 
-        for i in range(len(self.data["Path"])): self.data[self.data["Path"][i].split("/")[2]][i] = 1
+        for i in range(len(self.data["Path"])): self.data[self.data["Path"][i].split("/")[-2]][i] = 1
 
         self.data = pd.DataFrame(self.data)
         
