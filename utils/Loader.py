@@ -49,7 +49,7 @@ class CXR8Dataset(Dataset):
 class NEUDataset(Dataset):
     base_path = "metal_dataset/"
 
-    def __init__(self, set:str, transform=None, seed:int = None, scale: float = 1, best_param = False):
+    def __init__(self, set:str, transform=None, seed:int = None, scale: float = 1, best_param = False, output_path: str  = "output.csv"):
         '''set can be train, test, or valid'''
         super().__init__()
         self.base_path = self.base_path+set+'/'
