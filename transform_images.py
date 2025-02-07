@@ -31,10 +31,10 @@ from scipy.ndimage import maximum_filter, minimum_filter, label, generate_binary
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from scipy.ndimage import label as ndi_label, binary_dilation
 
-#loaded_model = Prototype1(num_attention_heads=16)
-#loaded_model.load_state_dict(torch.load("h1.pth", map_location=torch.device('cpu')))
-#loaded_model.to("cuda")
-#loaded_model.eval()
+loaded_model = Prototype1(num_attention_heads=16)
+loaded_model.load_state_dict(torch.load("h2.pth", map_location=torch.device('cpu')))
+loaded_model.to("cuda")
+loaded_model.eval()
 
 def save_image(path, image):
     """
@@ -55,18 +55,23 @@ def save_image(path, image):
     # Guardar la imagen en escala de grises
     cv2.imwrite(path, image)
 
-dataset = NEUDataset(set="train", seed=555, scale=0.5, best_param=True, output_path="outputs_k10")
+dataset = NEUDataset(set="train", seed=555, scale=0.5)
+print(len(dataset))
 
 for i in range(len(dataset)):
-    image, label, best_params = dataset.__getitem__(index=i)
+    image, label = dataset.__getitem__(index=i)
 
     original_image = Perspectiver.grayscale_to_rgb(Perspectiver.normalize_to_uint8(image.detach().cpu().numpy()[0]))
 
-    path = "clustered_metal_dataset" + dataset.data["Path"][i]
-    sp = dataset.data["sp"][i]
-    sr = dataset.data["sr"][i]
-    k = dataset.data["k"][i]
-    clustered_image = Perspectiver.meanShift(original_image, sp, sr)
+    path = "clustered_" + dataset.data["Path"][i]
+
+    output = loaded_model(image.to("cuda"))
+
+    sp = float(output[0][0].detach().cpu().numpy())
+    sr = float(output[0][1].detach().cpu().numpy())
+    if sp <= 1: sp = 1
+
+    clustered_image = Perspectiver.meanShift(original_image, sp , sr)
 
     save_image(path, clustered_image)
 

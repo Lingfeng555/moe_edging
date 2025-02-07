@@ -4,6 +4,53 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class ResDownBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, stride=2, p_dropout=0.2):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1)
+        self.bn1 = nn.BatchNorm2d(out_ch)
+        self.relu = nn.ReLU(inplace=True)
+        self.drop = nn.Dropout2d(p=p_dropout)
+        self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(out_ch)
+        self.shortcut = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 1, stride=stride),
+            nn.BatchNorm2d(out_ch)
+        ) if stride != 1 or in_ch != out_ch else nn.Identity()
+
+    def forward(self, x):
+        skip = self.shortcut(x)
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.drop(x)
+        x = self.bn2(self.conv2(x))
+        return self.relu(x + skip)
+
+class ResUpBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, stride=2, output_padding=0, p_dropout=0.2):
+        super().__init__()
+        self.conv1 = nn.ConvTranspose2d(in_ch, out_ch, 3, stride=stride, 
+                                        padding=1, output_padding=output_padding)
+        self.bn1 = nn.BatchNorm2d(out_ch)
+        self.relu = nn.ReLU(inplace=True)
+        self.drop = nn.Dropout2d(p=p_dropout)
+        self.conv2 = nn.ConvTranspose2d(out_ch, out_ch, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(out_ch)
+        self.shortcut = nn.Sequential(
+            nn.ConvTranspose2d(in_ch, out_ch, 1, stride=stride,
+                               output_padding=output_padding),
+            nn.BatchNorm2d(out_ch)
+        ) if stride != 1 or in_ch != out_ch else nn.Identity()
+
+    def forward(self, x):
+        skip = self.shortcut(x)
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.drop(x)
+        x = self.bn2(self.conv2(x))
+        return self.relu(x + skip)
 
 class FeatureExpert(nn.Module):
     def __init__(self):
@@ -17,49 +64,99 @@ class FeatureExpert(nn.Module):
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         return x
-
+    
 class Autoencoder(nn.Module):
-    def __init__(self, latent_dim=256):
-        super(Autoencoder, self).__init__()
-        # Encoder: 4 capas convolucionales
+    def __init__(self):
+        super().__init__()
         self.encoder_conv = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=3, stride=2, padding=1),   # 100x100 -> 50x50
-            nn.ReLU(inplace=True),
-            nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1),   # 50x50 -> 25x25
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # 25x25 -> 13x13
-            nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 13x13 -> 7x7
-            nn.ReLU(inplace=True)
+            ResDownBlock(1, 8),
+            ResDownBlock(8, 16),
+            ResDownBlock(16, 32),
+            ResDownBlock(32, 64)
         )
-
-        self.experts = nn.ModuleList([FeatureExpert() for _ in range(64)])
-
-        # Decoder: 4 capas de convolución transpuesta
+        #self.experts = nn.ModuleList([FeatureExpert() for _ in range(64)])
         self.decoder_conv = nn.Sequential(
-            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=0),  # 7x7 -> 13x13
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(32, 16, kernel_size=3, stride=2, padding=1, output_padding=0),  # 13x13 -> 25x25
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(16, 8, kernel_size=3, stride=2, padding=1, output_padding=1),   # 25x25 -> 50x50
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(8, 1, kernel_size=3, stride=2, padding=1, output_padding=1),    # 50x50 -> 100x100
-            nn.Sigmoid()  # Salida en rango [0,1]
+            ResUpBlock(64, 32),
+            ResUpBlock(32, 16),
+            ResUpBlock(16, 8, output_padding=1),
+            ResUpBlock(8, 1, output_padding=1),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
-        # Encoder
-        x = self.encoder_conv(x)              # Resultado: (batch, 64, 7, 7)
-        x = x.view(x.size(0), 64, -1)               # Aplanar
-
-        #print(x.shape)
-        x = torch.stack([self.experts[i](x[:, i, :]) for i in range(64)], dim=1)
-        #print(x.shape)
-
-        #Decoder
-        x = x.view(x.size(0), 64, 7, 7)         # Reconfigurar forma
-        x = self.decoder_conv(x)              # Reconstrucción de imagen
+        x = self.encoder_conv(x)       # (batch, 64, 7, 7)
+        #x = x.view(x.size(0), 64, -1)
+        #x = torch.stack([self.experts[i](x[:, i, :]) for i in range(64)], dim=1)
+        #x = x.view(x.size(0), 64, 7, 7)
+        x = self.decoder_conv(x)
         return x
+
+import torch
+import torch.nn as nn
+
+class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.shortcut = (
+            nn.Conv2d(in_channels, out_channels, 1) if in_channels != out_channels else nn.Identity()
+        )
+
+    def forward(self, x):
+        identity = self.shortcut(x)
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        return self.relu(out + identity)
+
+# Codificador
+class Encoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.block1 = ResBlock(1, 64)
+        self.pool1 = nn.MaxPool2d(2)
+        self.block2 = ResBlock(64, 128)
+        self.pool2 = nn.MaxPool2d(2)
+        self.block3 = ResBlock(128, 256)
+
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.pool1(x)
+        x = self.block2(x)
+        x = self.pool2(x)
+        return self.block3(x)
+
+# Decodificador
+class Decoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.block3 = ResBlock(256, 128)
+        self.up2 = nn.Upsample(scale_factor=2, mode='nearest')
+        self.block2 = ResBlock(128, 64)
+        self.up1 = nn.Upsample(scale_factor=2, mode='nearest')
+        self.block1 = ResBlock(64, 1)
+
+    def forward(self, x):
+        x = self.block3(x)
+        x = self.up2(x)
+        x = self.block2(x)
+        x = self.up1(x)
+        return self.block1(x)
+
+# Autoencoder completo
+class ResNetAutoencoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.encoder = Encoder()
+        self.decoder = Decoder()
+
+    def forward(self, x):
+        encoded = self.encoder(x)
+        return self.decoder(encoded)
+
 
 if __name__ == "__main__":
     # Crear instancia del modelo
