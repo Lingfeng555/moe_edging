@@ -3,11 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class FinalExpert(nn.Module):
-    def __init__(self):
+    def __init__(self, output_len = 2):
         super(FinalExpert, self).__init__()
         self.fc1 = nn.Linear(64, 32)
         self.fc2 = nn.Linear(32, 16)
-        self.fc3 = nn.Linear(16, 2)
+        self.fc3 = nn.Linear(16, output_len)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
